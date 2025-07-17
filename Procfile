@@ -1,1 +1,1 @@
-web: gunicorn Spotify_BE.wsgi
+web: gunicorn Spotify_BE.wsgi:application

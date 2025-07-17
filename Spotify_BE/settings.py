@@ -20,7 +20,7 @@ SECRET_KEY_JWT = os.getenv('SECRET_KEY_JWT')
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
 
-ALLOWED_HOSTS = ['localhost', '127.0.0.1']
+ALLOWED_HOSTS = ['localhost', '127.0.0.1', 'https://spotify-be-6mm9.onrender.com']
 
 # Application definition
 INSTALLED_APPS = [

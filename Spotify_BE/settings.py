@@ -58,6 +58,7 @@ CORS_ALLOWED_ORIGINS = [
     FRONTEND_URL,
     'http://localhost:5173',
     'http://127.0.0.1:5173',
+    "https://spotify-fe.vercel.app",
 ]
 CORS_ALLOW_CREDENTIALS = True
 

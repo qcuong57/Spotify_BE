@@ -2,6 +2,8 @@
 
 This is the back-end implementation for a Spotify-like music streaming service. Built primarily in Python, this project provides APIs and services to manage user accounts, playlists, and music streaming functionalities.
 
+## 🔗 Live Demo: https://spotify-fe-rho.vercel.app/
+
 ## Features
 
 - **User Management**: Handle user registration, authentication, and profile management.

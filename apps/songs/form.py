@@ -12,7 +12,11 @@ class SongForm(forms.ModelForm):
 
     class Meta:
         model = Song
-        fields = ['genre', 'singer_name', 'song_name', 'audio_file', 'image_file', 'video_file']
+        fields = ['genre', 'singer_name', 'song_name','lyrics', 'audio_file', 'image_file', 'video_file']
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields['lyrics'].widget = forms.Textarea(attrs={'rows': 10, 'cols': 50})
 
     def clean_audio_file(self):
         audio_file = self.cleaned_data.get('audio_file')

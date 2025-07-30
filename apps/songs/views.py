@@ -10,7 +10,9 @@ from rest_framework.permissions import IsAuthenticated, IsAuthenticatedOrReadOnl
 from rest_framework.parsers import MultiPartParser, FormParser
 from rest_framework.pagination import PageNumberPagination
 from django.shortcuts import get_object_or_404
-from django.db.models import Q
+from django.db.models import Q, F, Sum, Count, Avg
+from django.utils import timezone
+from datetime import timedelta
 from .models import Song, Genre
 from .serializers import SongSerializer, GenreSerializer
 from .form import SongForm
@@ -20,10 +22,12 @@ import urllib.parse
 
 logger = logging.getLogger(__name__)
 
+
 class SongPagination(PageNumberPagination):
     page_size = 50
     page_size_query_param = 'page_size'
     max_page_size = 100
+
 
 class GenreViewSet(viewsets.ModelViewSet):
     queryset = Genre.objects.all()
@@ -75,6 +79,7 @@ class GenreViewSet(viewsets.ModelViewSet):
         page = paginator.paginate_queryset(queryset, request)
         serializer = GenreSerializer(page, many=True, context={'request': request})
         return paginator.get_paginated_response(serializer.data)
+
 
 class SongViewSet(viewsets.ViewSet):
     permission_classes = [IsAuthenticatedOrReadOnly]
@@ -152,6 +157,190 @@ class SongViewSet(viewsets.ViewSet):
 
         song.delete()
         return Response(status=status.HTTP_204_NO_CONTENT)
+
+    @action(detail=True, methods=['post'], url_path='play')
+    def play(self, request, pk=None):
+        """API để tăng số lượt nghe khi user phát nhạc"""
+        song = get_object_or_404(Song, pk=pk)
+
+        # Tăng play_count sử dụng F expression để tránh race condition
+        Song.objects.filter(pk=pk).update(play_count=F('play_count') + 1)
+
+        # Refresh object để lấy giá trị mới
+        song.refresh_from_db()
+
+        serializer = SongSerializer(song, context={'request': request})
+        return Response({
+            'message': 'Play count updated',
+            'song': serializer.data
+        })
+
+    @action(detail=False, methods=['get'], url_path='top-songs')
+    def top_songs(self, request):
+        """API lấy danh sách bài hát có nhiều lượt nghe nhất"""
+        limit = request.query_params.get('limit', 10)
+        genre_id = request.query_params.get('genre', None)
+
+        try:
+            limit = int(limit)
+            if limit <= 0 or limit > 100:
+                limit = 10
+        except ValueError:
+            limit = 10
+
+        queryset = Song.objects.all()
+
+        # Filter theo genre nếu có
+        if genre_id:
+            queryset = queryset.filter(genre_id=genre_id)
+
+        # Sắp xếp theo play_count giảm dần
+        queryset = queryset.order_by('-play_count', '-create_at')[:limit]
+
+        serializer = SongSerializer(queryset, many=True, context={'request': request})
+
+        # Thêm ranking number
+        data = []
+        for index, song_data in enumerate(serializer.data, 1):
+            song_data['rank'] = index
+            data.append(song_data)
+
+        return Response({
+            'results': data,
+            'total': len(data)
+        })
+
+    @action(detail=False, methods=['get'], url_path='trending')
+    def trending(self, request):
+        """API lấy bài hát đang trending (bài hát mới và có play_count cao)"""
+        limit = request.query_params.get('limit', 20)
+
+        try:
+            limit = int(limit)
+            if limit <= 0 or limit > 50:
+                limit = 20
+        except ValueError:
+            limit = 20
+
+        # Lấy những bài hát được tạo trong 30 ngày qua và có play_count cao
+        thirty_days_ago = timezone.now() - timedelta(days=30)
+
+        queryset = Song.objects.filter(
+            create_at__gte=thirty_days_ago
+        ).order_by('-play_count', '-create_at')[:limit]
+
+        serializer = SongSerializer(queryset, many=True, context={'request': request})
+
+        # Thêm ranking
+        data = []
+        for index, song_data in enumerate(serializer.data, 1):
+            song_data['rank'] = index
+            data.append(song_data)
+
+        return Response({
+            'results': data,
+            'total': len(data)
+        })
+
+    @action(detail=False, methods=['get'], url_path='genre-ranking')
+    def genre_ranking(self, request):
+        """API lấy top bài hát theo từng thể loại"""
+        limit_per_genre = request.query_params.get('limit', 5)
+
+        try:
+            limit_per_genre = int(limit_per_genre)
+            if limit_per_genre <= 0 or limit_per_genre > 10:
+                limit_per_genre = 5
+        except ValueError:
+            limit_per_genre = 5
+
+        result = []
+        genres = Genre.objects.all()
+
+        for genre in genres:
+            # Lấy top songs của genre này
+            top_songs = Song.objects.filter(genre=genre).order_by('-play_count')[:limit_per_genre]
+
+            if top_songs.exists():  # Chỉ thêm genre có bài hát
+                genre_data = {
+                    'id': str(genre.id),
+                    'name': genre.name,
+                    'songs': []
+                }
+
+                songs_data = SongSerializer(top_songs, many=True, context={'request': request}).data
+
+                # Thêm rank cho mỗi bài hát
+                for index, song in enumerate(songs_data, 1):
+                    song['rank'] = index
+                    genre_data['songs'].append(song)
+
+                result.append(genre_data)
+
+        return Response(result)
+
+    @action(detail=False, methods=['get'], url_path='stats')
+    def stats(self, request):
+        """API thống kê tổng quan"""
+        stats = Song.objects.aggregate(
+            total_songs=Count('id'),
+            total_plays=Sum('play_count'),
+            average_plays=Avg('play_count')
+        )
+
+        # Top 5 bài hát có nhiều lượt nghe nhất
+        top_songs = Song.objects.order_by('-play_count')[:5]
+        top_songs_data = SongSerializer(top_songs, many=True, context={'request': request}).data
+
+        # Thêm rank
+        for index, song in enumerate(top_songs_data, 1):
+            song['rank'] = index
+
+        # Top 5 thể loại phổ biến nhất
+        top_genres = Genre.objects.annotate(
+            total_plays=Sum('songs__play_count'),
+            song_count=Count('songs')
+        ).filter(song_count__gt=0).order_by('-total_plays')[:5]
+
+        top_genres_data = []
+        for index, genre in enumerate(top_genres, 1):
+            genre_data = {
+                'rank': index,
+                'id': str(genre.id),
+                'name': genre.name,
+                'total_plays': genre.total_plays or 0,
+                'song_count': genre.song_count
+            }
+            top_genres_data.append(genre_data)
+
+        return Response({
+            'total_songs': stats['total_songs'] or 0,
+            'total_plays': stats['total_plays'] or 0,
+            'average_plays': round(stats['average_plays'] or 0, 2),
+            'top_songs': top_songs_data,
+            'top_genres': top_genres_data
+        })
+
+    @action(detail=True, methods=['get', 'patch'], url_path='lyrics')
+    def lyrics(self, request, pk=None):
+        song = get_object_or_404(Song, pk=pk)
+
+        if request.method == 'GET':
+            return Response({'lyrics': song.lyrics})
+
+        elif request.method == 'PATCH':
+            # if song.user != request.user:
+            #     return Response({'error': 'You do not have permission to update this song'},
+            #                     status=status.HTTP_403_FORBIDDEN)
+
+            lyrics = request.data.get('lyrics', '')
+            song.lyrics = lyrics
+            song.save()
+
+            return Response({
+                'message': 'Lyrics updated successfully',
+                'lyrics': song.lyrics
+            })
 
     @action(detail=True, methods=['get'], url_path='download/(?P<file_type>audio|video)')
     def download(self, request, pk=None, file_type=None):

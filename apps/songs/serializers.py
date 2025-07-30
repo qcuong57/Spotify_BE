@@ -13,9 +13,9 @@ class SongSerializer(serializers.ModelSerializer):
     class Meta:
         model = Song
         fields = ['id', 'genre', 'genre_name', 'singer_name', 'song_name', 'lyrics',
-                 'url_video', 'image', 'url_audio', 'user', 'create_at', 'update_at',
+                 'url_video', 'image', 'url_audio', 'user', 'play_count', 'create_at', 'update_at',
                  'audio_download_url', 'video_download_url']
-        read_only_fields = ['user', 'create_at', 'update_at']
+        read_only_fields = ['user', 'play_count', 'create_at', 'update_at']
 
     def get_genre_name(self, obj):
         return obj.genre.name if obj.genre else None
@@ -57,8 +57,17 @@ class SongSerializer(serializers.ModelSerializer):
 
 class GenreSerializer(serializers.ModelSerializer):
     songs = SongSerializer(many=True, read_only=True)
+    song_count = serializers.SerializerMethodField()
+    total_plays = serializers.SerializerMethodField()
 
     class Meta:
         model = Genre
-        fields = ['id', 'name', 'songs']
-        read_only_fields = ['songs']
+        fields = ['id', 'name', 'songs', 'song_count', 'total_plays']
+        read_only_fields = ['songs', 'song_count', 'total_plays']
+
+    def get_song_count(self, obj):
+        return obj.songs.count()
+
+    def get_total_plays(self, obj):
+        from django.db.models import Sum
+        return obj.songs.aggregate(total=Sum('play_count'))['total'] or 0

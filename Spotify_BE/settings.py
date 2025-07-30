@@ -43,6 +43,7 @@ INSTALLED_APPS = [
 # Middleware
 MIDDLEWARE = [
     "corsheaders.middleware.CorsMiddleware",
+    'django.middleware.common.CommonMiddleware',
     'django.middleware.security.SecurityMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
@@ -62,6 +63,14 @@ CORS_ALLOWED_ORIGINS = [
     "https://spotify-fe-rho.vercel.app",
 ]
 CORS_ALLOW_CREDENTIALS = True
+
+CORS_ALLOW_HEADERS = [
+    "content-type",
+    "authorization",
+    "x-csrftoken",
+    "x-requested-with",
+    # thêm headers tùy theo frontend bạn cần
+]
 
 # URLs & Templates
 ROOT_URLCONF = 'Spotify_BE.urls'

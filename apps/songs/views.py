@@ -6,7 +6,7 @@ from django.http import StreamingHttpResponse
 from rest_framework import viewsets, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
-from rest_framework.permissions import IsAuthenticated, IsAuthenticatedOrReadOnly
+from rest_framework.permissions import IsAuthenticated, IsAuthenticatedOrReadOnly, AllowAny
 from rest_framework.parsers import MultiPartParser, FormParser
 from rest_framework.pagination import PageNumberPagination
 from django.shortcuts import get_object_or_404
@@ -158,7 +158,7 @@ class SongViewSet(viewsets.ViewSet):
         song.delete()
         return Response(status=status.HTTP_204_NO_CONTENT)
 
-    @action(detail=True, methods=['post'], url_path='play')
+    @action(detail=True, methods=['post'], url_path='play', permission_classes=[AllowAny])
     def play(self, request, pk=None):
         """API để tăng số lượt nghe khi user phát nhạc"""
         song = get_object_or_404(Song, pk=pk)

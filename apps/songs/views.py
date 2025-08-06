@@ -410,22 +410,64 @@ class SongViewSet(viewsets.ViewSet):
 
     @action(detail=False, methods=['get'], url_path='search')
     def search(self, request):
-        query = request.query_params.get('q', '')
-        genre_id = request.query_params.get('genre', None)
+        """
+        API tìm kiếm đơn giản - chỉ tìm tên bài hát và ca sĩ
+        """
+        try:
+            query = request.query_params.get('q', '').strip()
 
-        filters = Q()
-        if query:
-            filters &= Q(song_name__icontains=query)
+            if not query:
+                # Nếu không có query, trả về tất cả bài hát
+                queryset = Song.objects.all().order_by('song_name')
+            else:
+                # Tìm kiếm trong tên bài hát và tên ca sĩ
+                queryset = Song.objects.filter(
+                    Q(song_name__icontains=query) | Q(singer_name__icontains=query)
+                ).order_by('song_name', 'singer_name')
 
-        if genre_id:
-            try:
-                filters &= Q(genre_id=genre_id)
-            except Genre.DoesNotExist:
-                return Response({'error': 'Genre not found'}, status=status.HTTP_404_NOT_FOUND)
+            # Pagination
+            paginator = self.pagination_class()
+            page = paginator.paginate_queryset(queryset, request)
+            serializer = SongSerializer(page, many=True, context={'request': request})
 
-        queryset = Song.objects.filter(filters).order_by('song_name')
+            return paginator.get_paginated_response(serializer.data)
 
-        paginator = self.pagination_class()
-        page = paginator.paginate_queryset(queryset, request)
-        serializer = SongSerializer(page, many=True, context={'request': request})
-        return paginator.get_paginated_response(serializer.data)
+        except Exception as e:
+            logger.error(f"Search error: {e}")
+            return Response(
+                {'error': 'Tìm kiếm thất bại', 'details': str(e)},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+
+    @action(detail=False, methods=['get'], url_path='search-suggestions')
+    def search_suggestions(self, request):
+        """
+        API gợi ý tìm kiếm đơn giản
+        """
+        try:
+            query = request.query_params.get('q', '').strip()
+            limit = int(request.query_params.get('limit', 5))
+
+            if not query or len(query) < 2:
+                return Response({'suggestions': []})
+
+            # Lấy gợi ý tên bài hát (không trùng lặp)
+            song_suggestions = Song.objects.filter(
+                song_name__icontains=query
+            ).values_list('song_name', flat=True).distinct()[:limit]
+
+            # Lấy gợi ý tên ca sĩ (không trùng lặp)
+            singer_suggestions = Song.objects.filter(
+                singer_name__icontains=query
+            ).values_list('singer_name', flat=True).distinct()[:limit]
+
+            return Response({
+                'suggestions': {
+                    'songs': list(song_suggestions),
+                    'singers': list(singer_suggestions),
+                }
+            })
+
+        except Exception as e:
+            logger.error(f"Search suggestions error: {e}")
+            return Response({'suggestions': {'songs': [], 'singers': []}})

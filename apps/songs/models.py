@@ -37,4 +37,4 @@ class Song(models.Model):
             models.Index(fields=['genre']),
             models.Index(fields=['-create_at']),
             models.Index(fields=['-play_count']),  # Thêm index cho play_count
-        ]
+        ]   

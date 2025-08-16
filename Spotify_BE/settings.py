@@ -2,6 +2,9 @@ from pathlib import Path
 from datetime import timedelta
 import os
 from decouple import config, Csv
+import cloudinary
+import cloudinary.uploader
+import cloudinary.api
 
 # Base directory
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -30,9 +33,10 @@ INSTALLED_APPS = [
     'rest_framework.authtoken',
     'rest_framework_simplejwt.token_blacklist',
     'social_django',
-    'storages',
     'corsheaders',
     'channels',
+    'cloudinary',
+    'cloudinary_storage',
     'apps.users',
     'apps.songs',
     'apps.playlists',
@@ -43,7 +47,6 @@ INSTALLED_APPS = [
 # Middleware
 MIDDLEWARE = [
     "corsheaders.middleware.CorsMiddleware",
-    'django.middleware.common.CommonMiddleware',
     'django.middleware.security.SecurityMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
@@ -69,7 +72,6 @@ CORS_ALLOW_HEADERS = [
     "authorization",
     "x-csrftoken",
     "x-requested-with",
-    # thêm headers tùy theo frontend bạn cần
 ]
 
 # URLs & Templates
@@ -108,14 +110,14 @@ CHANNEL_LAYERS = {
 CACHES = {
     'default': {
         'BACKEND': 'django.core.cache.backends.redis.RedisCache',
-        'LOCATION': 'redis://127.0.0.1:6379/1',
+        'LOCATION': config('RD_URL'),
     }
 }
 
 # Auth
 AUTH_USER_MODEL = 'users.User'
 
-# Database
+# Database (Neon)
 DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.postgresql',
@@ -135,12 +137,42 @@ AUTH_PASSWORD_VALIDATORS = [
     {'NAME': 'django.contrib.auth.password_validation.NumericPasswordValidator'},
 ]
 
-# Static files
+# Cloudinary Configuration
+CLOUDINARY_URL = config('CLOUDINARY_URL')
+
+# Configure Cloudinary explicitly
+cloudinary.config(
+    cloud_name="djo8yeypo",
+    api_key="427634229177956",
+    api_secret="NIbk2gF2I64iH2J9fQO2VsKndds"
+)
+
+# Cloudinary Storage Configuration
+CLOUDINARY_STORAGE = {
+    'CLOUD_NAME': 'djo8yeypo',
+    'API_KEY': '427634229177956',
+    'API_SECRET': 'NIbk2gF2I64iH2J9fQO2VsKndds'
+}
+
+# Static & Media (Cloudinary)
 STATIC_URL = '/static/'
 STATIC_ROOT = os.path.join(BASE_DIR, 'staticfiles')
-STATICFILES_DIRS = [
-    os.path.join(BASE_DIR, 'static'),
-]
+
+# Only add STATICFILES_DIRS if static directory exists
+if os.path.isdir(os.path.join(BASE_DIR, 'static')):
+    STATICFILES_DIRS = [
+        os.path.join(BASE_DIR, 'static'),
+    ]
+
+# Use Cloudinary for media files
+DEFAULT_FILE_STORAGE = 'cloudinary_storage.storage.MediaCloudinaryStorage'
+
+# For production, use Cloudinary for static files
+# For development, you can use local storage
+if DEBUG:
+    STATICFILES_STORAGE = 'django.contrib.staticfiles.storage.StaticFilesStorage'
+else:
+    STATICFILES_STORAGE = 'cloudinary_storage.storage.StaticHashedCloudinaryStorage'
 
 # Timezone
 LANGUAGE_CODE = 'en-us'
@@ -178,13 +210,6 @@ SOCIAL_AUTH_GOOGLE_OAUTH2_KEY = config("GOOGLE_CLIENT_ID")
 SOCIAL_AUTH_GOOGLE_OAUTH2_SECRET = config("GOOGLE_CLIENT_SECRET")
 SOCIAL_AUTH_GOOGLE_OAUTH2_SCOPE = ['email', 'profile']
 SOCIAL_AUTH_REDIRECT_URI = FRONTEND_URL + '/auth/callback'
-
-# AWS S3
-DEFAULT_FILE_STORAGE = 'storages.backends.s3boto3.S3Boto3Storage'
-AWS_ACCESS_KEY_ID = config('AWS_ACCESS_KEY_ID')
-AWS_SECRET_ACCESS_KEY = config('AWS_SECRET_ACCESS_KEY')
-AWS_STORAGE_BUCKET_NAME = config('AWS_STORAGE_BUCKET_NAME')
-AWS_S3_REGION_NAME = config('AWS_S3_REGION_NAME', default='ap-southeast-1')
 
 # Logging
 LOGGING = {

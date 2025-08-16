@@ -1,6 +1,6 @@
 from django import forms
 from .models import Song
-from .aws_helper import S3Uploader
+from .cloudinary_helper import CloudinaryUploader  # Thay đổi import
 import logging
 
 logger = logging.getLogger(__name__)
@@ -50,29 +50,29 @@ class SongForm(forms.ModelForm):
 
     def save(self, commit=True, user=None):
         instance = super().save(commit=False)
-        s3_uploader = S3Uploader()
+        cloudinary_uploader = CloudinaryUploader()  # Thay đổi từ S3Uploader sang CloudinaryUploader
 
         # Delete old files if they exist and new files are uploaded
         if self.instance.pk:
             try:
                 old_song = Song.objects.get(pk=self.instance.pk)
                 if self.cleaned_data.get('audio_file') and old_song.url_audio:
-                    s3_uploader.delete_file(old_song.url_audio)
+                    cloudinary_uploader.delete_file(old_song.url_audio)
                 if self.cleaned_data.get('image_file') and old_song.image:
-                    s3_uploader.delete_file(old_song.image)
+                    cloudinary_uploader.delete_file(old_song.image)
                 if self.cleaned_data.get('video_file') and old_song.url_video:
-                    s3_uploader.delete_file(old_song.url_video)
+                    cloudinary_uploader.delete_file(old_song.url_video)
             except Song.DoesNotExist:
                 pass
 
         # Handle audio file
         audio_file = self.cleaned_data.get('audio_file')
         if audio_file:
-            url_audio = s3_uploader.upload_file(audio_file, 'song')
+            url_audio = cloudinary_uploader.upload_audio(audio_file, folder='spotify/audio')
             if url_audio:
                 instance.url_audio = url_audio
             else:
-                logger.error("Failed to upload audio file to S3")
+                logger.error("Failed to upload audio file to Cloudinary")
                 raise forms.ValidationError("Failed to upload audio file.")
         elif 'url_audio' in self.data:  # giữ giá trị cũ khi không thay đổi file
             instance.url_audio = self.data['url_audio']
@@ -82,11 +82,11 @@ class SongForm(forms.ModelForm):
         # Handle image file
         image_file = self.cleaned_data.get('image_file')
         if image_file:
-            image_url = s3_uploader.upload_file(image_file, 'image')
+            image_url = cloudinary_uploader.upload_image(image_file, folder='spotify/images')
             if image_url:
                 instance.image = image_url
             else:
-                logger.error("Failed to upload image file to S3")
+                logger.error("Failed to upload image file to Cloudinary")
                 raise forms.ValidationError("Failed to upload image file.")
         elif 'image' in self.data:
             instance.image = self.data['image']
@@ -94,11 +94,11 @@ class SongForm(forms.ModelForm):
         # Handle video file
         video_file = self.cleaned_data.get('video_file')
         if video_file:
-            url_video = s3_uploader.upload_file(video_file, 'video')
+            url_video = cloudinary_uploader.upload_video(video_file, folder='spotify/videos')
             if url_video:
                 instance.url_video = url_video
             else:
-                logger.error("Failed to upload video file to S3")
+                logger.error("Failed to upload video file to Cloudinary")
                 raise forms.ValidationError("Failed to upload video file.")
         elif 'url_video' in self.data:
             instance.url_video = self.data['url_video']

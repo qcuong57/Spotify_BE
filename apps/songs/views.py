@@ -1,8 +1,8 @@
-import boto3
-from botocore.exceptions import ClientError
+import cloudinary
+import cloudinary.uploader
 from django.conf import settings
 from django.contrib.auth import authenticate, login
-from django.http import StreamingHttpResponse
+from django.http import StreamingHttpResponse, HttpResponse
 from rest_framework import viewsets, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
@@ -16,9 +16,9 @@ from datetime import timedelta
 from .models import Song, Genre
 from .serializers import SongSerializer, GenreSerializer
 from .form import SongForm
-from .aws_helper import S3Uploader
 import logging
 import urllib.parse
+import requests
 
 logger = logging.getLogger(__name__)
 
@@ -147,16 +147,43 @@ class SongViewSet(viewsets.ViewSet):
         #         status=status.HTTP_403_FORBIDDEN
         #     )
 
-        s3_uploader = S3Uploader()
-        if song.url_audio:
-            s3_uploader.delete_file(song.url_audio)
-        if song.image:
-            s3_uploader.delete_file(song.image)
-        if song.url_video:
-            s3_uploader.delete_file(song.url_video)
+        # Delete files from Cloudinary
+        try:
+            if song.url_audio:
+                # Extract public_id from Cloudinary URL
+                public_id = self.extract_public_id_from_url(song.url_audio)
+                if public_id:
+                    cloudinary.uploader.destroy(public_id, resource_type="auto")
+
+            if song.image:
+                public_id = self.extract_public_id_from_url(song.image)
+                if public_id:
+                    cloudinary.uploader.destroy(public_id, resource_type="image")
+
+            if song.url_video:
+                public_id = self.extract_public_id_from_url(song.url_video)
+                if public_id:
+                    cloudinary.uploader.destroy(public_id, resource_type="video")
+        except Exception as e:
+            logger.error(f"Error deleting files from Cloudinary: {e}")
 
         song.delete()
         return Response(status=status.HTTP_204_NO_CONTENT)
+
+    def extract_public_id_from_url(self, url):
+        """Extract public_id from Cloudinary URL"""
+        try:
+            if not url:
+                return None
+            # Cloudinary URL format: https://res.cloudinary.com/{cloud_name}/{resource_type}/upload/{public_id}.{format}
+            parts = url.split('/')
+            if 'cloudinary.com' in url and len(parts) > 6:
+                public_id_with_format = parts[-1]
+                public_id = public_id_with_format.split('.')[0]
+                return public_id
+        except Exception as e:
+            logger.error(f"Error extracting public_id from URL {url}: {e}")
+        return None
 
     @action(detail=True, methods=['post'], url_path='play', permission_classes=[AllowAny])
     def play(self, request, pk=None):
@@ -348,17 +375,13 @@ class SongViewSet(viewsets.ViewSet):
 
         if file_type == 'audio':
             file_url = song.url_audio
-            content_type = 'audio/mpeg'
-            file_extension = file_url.split('.')[-1] if file_url else 'mp3'
-            file_name = f"{song.singer_name}_{song.song_name}_audio.{file_extension}"
+            file_name = f"{song.singer_name}_{song.song_name}_audio.mp3"
         elif file_type == 'video':
             file_url = song.url_video
             if not file_url:
                 return Response({'error': 'No video file available for this song'},
                                 status=status.HTTP_404_NOT_FOUND)
-            content_type = 'video/mp4'
-            file_extension = file_url.split('.')[-1] if file_url else 'mp4'
-            file_name = f"{song.singer_name}_{song.song_name}_video.{file_extension}"
+            file_name = f"{song.singer_name}_{song.song_name}_video.mp4"
         else:
             return Response({'error': 'Invalid file type'}, status=status.HTTP_400_BAD_REQUEST)
 
@@ -367,27 +390,22 @@ class SongViewSet(viewsets.ViewSet):
                             status=status.HTTP_404_NOT_FOUND)
 
         try:
-            s3_client = boto3.client(
-                's3',
-                aws_access_key_id=settings.AWS_ACCESS_KEY_ID,
-                aws_secret_access_key=settings.AWS_SECRET_ACCESS_KEY,
-                region_name=settings.AWS_S3_REGION_NAME
-            )
-            key = file_url.split('.com/')[-1]
-            response = s3_client.get_object(Bucket=settings.AWS_STORAGE_BUCKET_NAME, Key=key)
-            file_stream = response['Body']
+            # Download file from Cloudinary
+            response = requests.get(file_url)
+            response.raise_for_status()
 
+            # Create HTTP response with file content
             encoded_file_name = urllib.parse.quote(file_name)
-            streaming_response = StreamingHttpResponse(
-                file_stream,
-                content_type=content_type
+            http_response = HttpResponse(
+                response.content,
+                content_type='application/octet-stream'
             )
-            streaming_response['Content-Disposition'] = f'attachment; filename="{encoded_file_name}"'
-            streaming_response['Content-Length'] = response['ContentLength']
-            return streaming_response
+            http_response['Content-Disposition'] = f'attachment; filename="{encoded_file_name}"'
+            http_response['Content-Length'] = len(response.content)
+            return http_response
 
-        except ClientError as e:
-            logger.error(f"Error downloading from S3: {e}")
+        except Exception as e:
+            logger.error(f"Error downloading from Cloudinary: {e}")
             return Response({'error': f'Failed to download {file_type} file'},
                             status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 

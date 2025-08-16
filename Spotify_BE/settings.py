@@ -149,9 +149,9 @@ cloudinary.config(
 
 # Cloudinary Storage Configuration
 CLOUDINARY_STORAGE = {
-    'CLOUD_NAME': 'djo8yeypo',
-    'API_KEY': '427634229177956',
-    'API_SECRET': 'NIbk2gF2I64iH2J9fQO2VsKndds'
+    'CLOUD_NAME': os.getenv('CLOUDINARY_CLOUD_NAME'),
+    'API_KEY': os.getenv('CLOUDINARY_API_KEY'),
+    'API_SECRET': os.getenv('CLOUDINARY_API_SECRET')
 }
 
 # Static & Media (Cloudinary)
